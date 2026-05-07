@@ -196,6 +196,15 @@ Server-only app (no client entry point).
 | No client tests (test client skipped) | Test |
 | Server entry loads (`server/main.js loaded`) | Run |
 
+### tla
+
+Minimal top-level await fixture.
+
+| What is covered | Phase |
+|----------------|-------|
+| `meteor test --full-app --once` waits for macrotask top-level await before running server app tests | Test once |
+| Exit-code-zero `0 passing` regression is rejected by explicit `1 passing` assertion | Test once |
+
 ---
 
 ## Skeletons
@@ -297,7 +306,8 @@ Where each feature is tested across apps and skeletons.
 | CoffeeScript compilation | coffeescript | coffeescript |
 | Server-only (no client) | server-only | |
 | Monorepo layout | monorepo | |
-| Full-app test mode | react-router | |
+| Full-app test mode | react-router, tla | |
+| Top-level await in full-app tests | tla | |
 | Module rules override | babel | |
 | Custom NODE_ENV compilation | babel | |
 | Portable build (no isDev/isProd defines) | typescript | |
