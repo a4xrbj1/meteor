@@ -51,7 +51,7 @@ jobs:
           - R.Router
           - Solid
           - Svelte
-          - TLA
+          - tla
           - Typescript
           - Vue
 
