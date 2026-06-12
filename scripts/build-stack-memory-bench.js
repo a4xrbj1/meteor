@@ -258,7 +258,7 @@ function getTreeStats(pid) {
 
   const toolRSS = getRSS(pid);
   const otherRSS = Math.max(totalRSS - toolRSS - appRSS, 0);
-  return { 
+  return {
     totalRSS, 
     count: pids.length, 
     pids,
@@ -921,7 +921,7 @@ async function main() {
   const summary = {};
   const variantWidth = 25;
   const activeMatrix = getActiveMatrix();
-  
+
   for (const item of activeMatrix) {
     allResults[item.name] = await runVariant(item.name, item.config);
     summary[item.name] = analyzeResults(allResults[item.name]);
