@@ -1,5 +1,6 @@
 const { spawn } = require('child_process');
 const fs = require('fs');
+const net = require('net');
 const path = require('path');
 const { execSync } = require('child_process');
 
@@ -26,6 +27,7 @@ const CONFIG = {
   MAX_CYCLES: parseInt(process.env.MAX_CYCLES, 10) || 10,
   PORT: process.env.PORT || '3333',
   SETTLE_TIME: parseInt(process.env.SETTLE_TIME, 10) || 3000,
+  CYCLE_TIMEOUT: parseInt(process.env.CYCLE_TIMEOUT, 10) || 60000,
   TOOL_NODE_FLAGS: process.env.TOOL_NODE_FLAGS || '--max-old-space-size=4096 --expose-gc',
   SKIP_RESET: process.env.SKIP_RESET === 'true',
   READY_PATTERN: process.env.READY_PATTERN || 'App running at|Meteor server restarted at',
@@ -46,6 +48,7 @@ Environment Variables:
   MAX_CYCLES     Number of rebuilds to perform (default: 10)
   PORT           Port to run the app on (default: 3333)
   SETTLE_TIME    MS to wait after rebuild before sampling (default: 3000)
+  CYCLE_TIMEOUT  MS to wait for initial readiness or next rebuild before failing the variant (default: 60000)
   TOOL_NODE_FLAGS Flags for the Meteor tool (default: --max-old-space-size=4096 --expose-gc)
   SKIP_RESET     If 'true', don't run 'meteor reset' before variants
   READY_PATTERN  Regex pattern to detect app readiness (default: App running at|restarted at)
@@ -148,6 +151,141 @@ function getTreeStats(pid) {
   };
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getMtimeMs(filePath) {
+  try {
+    return fs.statSync(filePath).mtimeMs;
+  } catch (e) {
+    return null;
+  }
+}
+
+function formatMtime(filePath) {
+  const mtimeMs = getMtimeMs(filePath);
+  if (mtimeMs === null) {
+    return `${filePath} (missing)`;
+  }
+
+  return `${filePath} (${new Date(mtimeMs).toISOString()})`;
+}
+
+function getLocalDirPath(appPath) {
+  const localRelative = process.env.METEOR_LOCAL_DIR || '.meteor/local';
+  return path.isAbsolute(localRelative)
+    ? localRelative
+    : path.join(appPath, localRelative);
+}
+
+function pidExists(pid) {
+  if (!pid) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function getListeningPorts(pids) {
+  if (!pids.length) {
+    return [];
+  }
+
+  try {
+    const output = execSync(`lsof -Pan -p ${pids.join(',')} -iTCP -sTCP:LISTEN`, {
+      stdio: ['pipe', 'pipe', 'ignore']
+    }).toString();
+
+    return [...new Set(
+      output
+        .split('\n')
+        .map((line) => {
+          const match = line.match(/:(\d+)\s+\(LISTEN\)\s*$/);
+          return match ? parseInt(match[1], 10) : null;
+        })
+        .filter(Boolean)
+    )];
+  } catch (e) {
+    return [];
+  }
+}
+
+function isPortOpen(port, host = '127.0.0.1') {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ port, host });
+    const finish = (open) => {
+      socket.destroy();
+      resolve(open);
+    };
+
+    socket.once('connect', () => finish(true));
+    socket.once('error', () => finish(false));
+  });
+}
+
+async function waitForPortsToClose(ports, timeoutMs) {
+  if (!ports.length) {
+    return true;
+  }
+
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const stillOpen = [];
+    for (const port of ports) {
+      if (await isPortOpen(port)) {
+        stillOpen.push(port);
+      }
+    }
+
+    if (!stillOpen.length) {
+      return true;
+    }
+
+    await sleep(200);
+  }
+
+  return false;
+}
+
+async function stopProcessTree(rootPid, options = {}) {
+  if (!rootPid) {
+    return;
+  }
+
+  const graceMs = options.graceMs || 2000;
+  const waitMs = options.waitMs || 5000;
+  const pids = [...new Set(getProcessTree(rootPid))].sort((a, b) => b - a);
+  const ports = [...new Set([...getListeningPorts(pids), parseInt(CONFIG.PORT, 10)].filter(Number.isFinite))];
+
+  for (const pid of pids) {
+    try {
+      process.kill(pid, 'SIGINT');
+    } catch (e) {}
+  }
+
+  await sleep(graceMs);
+
+  const survivors = pids.filter(pidExists);
+  for (const pid of survivors) {
+    try {
+      process.kill(pid, 'SIGKILL');
+    } catch (e) {}
+  }
+
+  const deadline = Date.now() + waitMs;
+  while (Date.now() < deadline) {
+    if (!pids.some(pidExists)) {
+      break;
+    }
+    await sleep(200);
+  }
+
+  await waitForPortsToClose(ports, waitMs);
+}
+
 async function runVariant(name, config) {
   console.log(`\n>>> Testing variant: ${name}`);
   
@@ -189,11 +327,55 @@ async function runVariant(name, config) {
   let results = [];
   let cycle = 0;
   let isReady = false;
+  let isFinished = false;
+  let waitTimer = null;
+  let lastOutput = '';
 
   return new Promise((resolve) => {
+    const finishVariant = () => {
+      if (isFinished) return;
+      isFinished = true;
+      if (waitTimer) {
+        clearTimeout(waitTimer);
+        waitTimer = null;
+      }
+      stopProcessTree(child.pid).finally(() => {
+        resolve(results);
+      });
+    };
+
+    const scheduleWaitTimeout = ({ reason, touchPath = null }) => {
+      if (waitTimer) {
+        clearTimeout(waitTimer);
+      }
+      waitTimer = setTimeout(() => {
+        if (isFinished || isReady) return;
+
+        const stats = getTreeStats(child.pid);
+        const touchedInfo = touchPath ? formatMtime(touchPath) : '(none)';
+        const serverRspackPath = path.join(CONFIG.APP_PATH, '_build/main-dev/server-rspack.js');
+        const localServerPath = path.join(getLocalDirPath(CONFIG.APP_PATH), 'build/main.js');
+
+        console.error(`\nTimeout waiting ${CONFIG.CYCLE_TIMEOUT}ms for ${reason}.`);
+        console.error(`  Variant: ${name}`);
+        console.error(`  Touch file: ${touchedInfo}`);
+        console.error(`  Output check: ${formatMtime(serverRspackPath)}`);
+        console.error(`  Local server: ${formatMtime(localServerPath)}`);
+        console.error(`  Last output: ${lastOutput || '(none captured)'}`);
+        console.error(`  Current RSS: total ${Math.round(stats.totalRSS / 1024)} MB, tool ${Math.round(stats.toolRSS / 1024)} MB, app ${Math.round(stats.appRSS / 1024)} MB`);
+        console.error('  The touched file likely did not trigger another rebuild for this variant/app.');
+
+        finishVariant();
+      }, CONFIG.CYCLE_TIMEOUT);
+    };
+
     const onReady = async () => {
-      if (isReady) return;
+      if (isFinished || isReady) return;
       isReady = true;
+      if (waitTimer) {
+        clearTimeout(waitTimer);
+        waitTimer = null;
+      }
       cycle++;
       console.log(`Cycle ${cycle}/${CONFIG.MAX_CYCLES} ready.`);
       
@@ -221,37 +403,56 @@ async function runVariant(name, config) {
         const mainPath = path.join(CONFIG.APP_PATH, CONFIG.TOUCH_FILE);
         if (fs.existsSync(mainPath)) {
           fs.appendFileSync(mainPath, `\n// ${Date.now()}`);
+          scheduleWaitTimeout({
+            reason: `cycle ${cycle + 1} readiness after touching ${CONFIG.TOUCH_FILE}`,
+            touchPath: mainPath,
+          });
         } else {
            console.log(`Warning: Touch file ${CONFIG.TOUCH_FILE} not found.`);
+           finishVariant();
         }
       } else {
         console.log('Test variant complete. Killing meteor...');
-        child.kill('SIGINT');
-        setTimeout(() => {
-          child.kill('SIGKILL');
-          resolve(results);
-        }, 5000);
+        finishVariant();
       }
     };
 
     child.stdout.on('data', (data) => {
       const str = data.toString();
       process.stdout.write(str);
+      const trimmed = str.trim();
+      if (trimmed) {
+        lastOutput = trimmed.split('\n').pop();
+      }
       if (readyRegex.test(str)) {
         onReady();
       }
     });
 
     child.stderr.on('data', (data) => {
-      process.stderr.write(data.toString());
+      const str = data.toString();
+      process.stderr.write(str);
+      const trimmed = str.trim();
+      if (trimmed) {
+        lastOutput = trimmed.split('\n').pop();
+      }
     });
 
     child.on('exit', (code) => {
+      if (isFinished) {
+        return;
+      }
+      if (waitTimer) {
+        clearTimeout(waitTimer);
+        waitTimer = null;
+      }
       if (cycle < CONFIG.MAX_CYCLES) {
         console.log(`Meteor process exited prematurely (code ${code})`);
         resolve(results);
       }
     });
+
+    scheduleWaitTimeout({ reason: 'initial startup' });
   });
 }
 
