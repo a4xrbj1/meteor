@@ -58,7 +58,7 @@ jobs:
     timeout-minutes: 75
     steps:
       - name: Clean self-hosted runner
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: ${{ env.SELF_HOSTED_RUNNER_CLEANUP_LOADER }}
 
@@ -107,7 +107,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Clean self-hosted runner
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: ${{ env.SELF_HOSTED_RUNNER_CLEANUP_LOADER }}
 
@@ -183,7 +183,7 @@ jobs:
       TEST_GROUP: "^[a-b]|^c[a-n]|^co[a-l]|^comm"
     steps:
       - name: Clean self-hosted runner
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: ${{ env.SELF_HOSTED_RUNNER_CLEANUP_LOADER }}
 
@@ -253,7 +253,7 @@ jobs:
       TEST_GROUP: "^com[n-z]"
     steps:
       - name: Clean self-hosted runner
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: ${{ env.SELF_HOSTED_RUNNER_CLEANUP_LOADER }}
 
@@ -324,7 +324,7 @@ jobs:
       TEST_GROUP: "^co[n-z]"
     steps:
       - name: Clean self-hosted runner
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: ${{ env.SELF_HOSTED_RUNNER_CLEANUP_LOADER }}
 
@@ -401,7 +401,7 @@ jobs:
       TEST_GROUP: "^c[p-z]|^h[a-e]"
     steps:
       - name: Clean self-hosted runner
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: ${{ env.SELF_HOSTED_RUNNER_CLEANUP_LOADER }}
 
@@ -471,7 +471,7 @@ jobs:
       TEST_GROUP: "^h[f-z]|^[i-l]"
     steps:
       - name: Clean self-hosted runner
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: ${{ env.SELF_HOSTED_RUNNER_CLEANUP_LOADER }}
 
@@ -542,7 +542,7 @@ jobs:
       TEST_GROUP: "^m[a-n]|^mo[a-d]"
     steps:
       - name: Clean self-hosted runner
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: ${{ env.SELF_HOSTED_RUNNER_CLEANUP_LOADER }}
 
@@ -612,7 +612,7 @@ jobs:
       TEST_GROUP: "^mo[e-z]|^m[p-z]|^[n-o]"
     steps:
       - name: Clean self-hosted runner
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: ${{ env.SELF_HOSTED_RUNNER_CLEANUP_LOADER }}
 
@@ -682,7 +682,7 @@ jobs:
       TEST_GROUP: "^[p-q]|^r[a-e]"
     steps:
       - name: Clean self-hosted runner
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: ${{ env.SELF_HOSTED_RUNNER_CLEANUP_LOADER }}
 
@@ -752,7 +752,7 @@ jobs:
       TEST_GROUP: "^r[f-z]"
     steps:
       - name: Clean self-hosted runner
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: ${{ env.SELF_HOSTED_RUNNER_CLEANUP_LOADER }}
 
@@ -822,7 +822,7 @@ jobs:
       TEST_GROUP: "^s"
     steps:
       - name: Clean self-hosted runner
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: ${{ env.SELF_HOSTED_RUNNER_CLEANUP_LOADER }}
 
@@ -892,7 +892,7 @@ jobs:
       TEST_GROUP: "^[t-z]"
     steps:
       - name: Clean self-hosted runner
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: ${{ env.SELF_HOSTED_RUNNER_CLEANUP_LOADER }}
 
@@ -962,7 +962,7 @@ jobs:
       TEST_GROUP: "^[d-g]"
     steps:
       - name: Clean self-hosted runner
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: ${{ env.SELF_HOSTED_RUNNER_CLEANUP_LOADER }}
 
